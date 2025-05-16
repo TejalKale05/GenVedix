@@ -1,0 +1,12 @@
+
+streamlit
+pandas
+requests
+Pillow
+biopython
+networkx
+pyvis
+plotly
+scipy
+primer3-py
+py3Dmol
