@@ -1,13 +1,13 @@
-# GenVedix - Your Gateway to Genomic Insights
+# GenVedix - An Aisle to Gene World
 import streamlit as st
 import pandas as pd
 import requests
 import base64
-import io # Ensure io is imported
+import io 
 import os
 import time
-from Bio import Entrez, SeqIO # Ensure SeqIO is imported
-from PIL import Image # Keep original import from user
+from Bio import Entrez, SeqIO 
+from PIL import Image 
 import networkx as nx
 from pyvis.network import Network
 import json
@@ -42,15 +42,6 @@ def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
     return base64.b64encode(data).decode()
-
-if not os.path.exists("dna_img.jpeg"):
-    try:
-        dummy_img = Image.new('RGB', (100, 100), color = 'darkblue')
-        dummy_img.save("dna_img.jpeg")
-    except ImportError:
-        st.warning("Pillow (PIL) is not installed. Cannot create dummy 'dna_img.jpeg'.")
-    except Exception as e:
-        st.warning(f"Could not create dummy 'dna_img.jpeg': {e}")
 
 
 st.markdown(f'''<style>
@@ -420,46 +411,34 @@ def fetch_kegg_pathways(gene_symbol, organism_name):
     except Exception as e:
         return None, f"Unexpected error in KEGG pathway fetch: {str(e)}"
 
+# --- Reactome Pathways ---
 @st.cache_data(ttl=3600)
 def fetch_reactome_pathways(gene_symbol, organism_name):
     try:
-        mygene_url = f"https://mygene.info/v3/query?q=symbol:{gene_symbol} AND species:{ORGANISM_TO_TAXID.get(organism_name)}&fields=uniprot"
-        r_mygene = requests.get(mygene_url)
-        uniprot_id = None
-        if r_mygene.status_code == 200:
-            results = r_mygene.json().get("hits", [])
-            if results:
-                uniprot_data = results[0].get("uniprot")
-                if uniprot_data:
-                    uniprot_id = uniprot_data.get("Swiss-Prot") or uniprot_data.get("TrEMBL")
-                    if isinstance(uniprot_id, list): uniprot_id = uniprot_id[0]
-        ids_to_try = []
-        if uniprot_id: ids_to_try.append(uniprot_id)
-        ids_to_try.append(gene_symbol)
-        species_ensembl = ORGANISM_TO_ENSEMBL_SPECIES.get(organism_name)
-        if species_ensembl:
-            ensembl_lookup_url = f"{ENSEMBL_SERVER}/lookup/symbol/{species_ensembl}/{gene_symbol}"
+        # Try Ensembl ID as well as symbol
+        species = ORGANISM_TO_ENSEMBL_SPECIES.get(organism_name, None)
+        ids_to_try = [gene_symbol]
+        if species:
+            url = f"https://rest.ensembl.org/lookup/symbol/{species}/{gene_symbol}"
             headers = {"Content-Type": "application/json"}
-            r_ensembl = requests.get(ensembl_lookup_url, headers=headers)
-            if r_ensembl.status_code == 200:
-                ensembl_gene_id = r_ensembl.json().get("id")
-                if ensembl_gene_id: ids_to_try.append(ensembl_gene_id)
-        ids_to_try = list(dict.fromkeys(ids_to_try))
+            r = requests.get(url, headers=headers)
+            if r.status_code == 200:
+                ensembl_id = r.json().get("id")
+                if ensembl_id:
+                    ids_to_try.append(ensembl_id)
         for query_id in ids_to_try:
-            species_identifiers = [str(ORGANISM_TO_TAXID.get(organism_name))]
-            if organism_name not in species_identifiers : species_identifiers.append(organism_name)
-            for species_query_param in species_identifiers:
-                mapping_url = f"https://reactome.org/ContentService/data/mapping/{species_query_param}/{query_id}/pathways"
-                r_reactome = requests.get(mapping_url, headers={"Accept": "application/json"})
-                if r_reactome.status_code == 200:
-                    pathway_data = r_reactome.json()
-                    if isinstance(pathway_data, list) and len(pathway_data) > 0:
-                        pathways = []
-                        for entry in pathway_data:
-                            if organism_name.lower() in entry.get("speciesName","").lower():
-                                 pathways.append({"Pathway ID": entry.get("stId", ""), "Name": entry.get("displayName", ""), "URL": f"https://reactome.org/content/detail/{entry.get('stId', '')}"})
-                        if pathways: return pathways, None
-        return None, f"No Reactome pathways found for gene '{gene_symbol}' in '{organism_name}' after trying IDs: {', '.join(ids_to_try)}."
+            mapping_url = f"https://reactome.org/ContentService/data/mapping/ENSEMBL/{query_id}/pathways"
+            r = requests.get(mapping_url)
+            if r.status_code == 200 and isinstance(r.json(), list) and len(r.json()) > 0:
+                pathways = []
+                for entry in r.json():
+                    pathways.append({
+                        "Pathway ID": entry.get("stId", ""),
+                        "Name": entry.get("displayName", ""),
+                        "URL": f"https://reactome.org/content/detail/{entry.get('stId', '')}"
+                    })
+                return pathways, None
+        return None, f"No Reactome pathways found for gene '{gene_symbol}' (tried symbol and Ensembl ID)."
     except Exception as e:
         return None, f"Error searching Reactome: {str(e)}"
 
@@ -850,7 +829,8 @@ def design_primers_with_primer3(seq_id, sequence, prod_min, prod_max, opt_size, 
              return None, f"Primer3 Input Error: {str(e)}. Please check sequence for N's, length, and product size parameters."
         return None, f"An error occurred during primer design: {str(e)}"
 
-# --- UPDATED Home Page Rendering ---
+
+# --- Home Page Rendering ---
 def render_home_page():
     st.markdown("<div style='height:3.5em;'></div>", unsafe_allow_html=True)
     st.markdown("<h1 style='color:#4CAF50; font-weight:900; text-shadow:none; text-align:center; font-size:5rem; letter-spacing:3px; margin-bottom:0.1em;'>GenVedix</h1>", unsafe_allow_html=True)
@@ -867,11 +847,11 @@ def render_home_page():
     """, unsafe_allow_html=True)
 
     # --- Genomic Toolkit Features ---
-    st.markdown("<h3 class='section-subheader' style='text-align:left; margin-left:0; font-size:1.7em !important;'>⚙️ Genomic Toolkit</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-subheader' style='text-align:left; margin-left:0; font-size:1.7em !important;'> Genomic Toolkit</h3>", unsafe_allow_html=True)
 
     with st.container():
         st.markdown('<div class="home-tool-expander">', unsafe_allow_html=True)
-        with st.expander("🔬 Gene Annotation Search", expanded=False):
+        with st.expander(" Gene Annotation Search", expanded=False):
             st.markdown("""
             <p>Fetch detailed information about genes from the NCBI Entrez database.</p>
             <strong>How it works:</strong>
@@ -888,13 +868,13 @@ def render_home_page():
                 <li>Allows viewing of GenBank sequence details (preview, length, features) for associated nucleotide IDs.</li>
                 <li>Enables downloading of the gene's FASTA sequence and annotation details in CSV, JSON, or TXT format.</li>
             </ul>
-            <p><em>Navigate to "⚙️ Genomic Toolkit" > "🔬 Gene Search" tab to use this feature.</em></p>
+            <p><em>Navigate to "Genomic Toolkit" > " Gene Search" tab to use this feature.</em></p>
             """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with st.container():
         st.markdown('<div class="home-tool-expander">', unsafe_allow_html=True)
-        with st.expander("🧬 Gene Interaction Network", expanded=False):
+        with st.expander(" Gene Interaction Network", expanded=False):
             st.markdown("""
             <p>Visualize gene interaction networks using data from the STRING DB, rendered with Pyvis for interactivity.</p>
             <strong>How it works:</strong>
@@ -1185,7 +1165,7 @@ def render_home_page():
     st.markdown("<div style='height:2em;'></div>", unsafe_allow_html=True) # Add some bottom spacing
 
 
-# --- UPDATED About Section ---
+# ---About Section ---
 def render_about_section():
     st.markdown("<h1 class='main-header'>About GenVedix</h1>", unsafe_allow_html=True)
     with st.container():
@@ -1199,15 +1179,13 @@ def render_about_section():
                 <p style='color: #4CAF50!important; margin-bottom: 0.5rem;'>Developer of GenVedix</p>
                 <div class='feature-card' style='max-width: 800px;'>
                     <p style='text-align: justify; line-height: 1.6;'>
-                    Hello Bioinformaticians! I am Tejal Kale, a Master's student in Bioinformatics at Deccan Education Society's Pune University.
-                    As someone who's spent countless hours navigating the complexities of gene annotation, I know firsthand the frustration
-                    of juggling multiple tools and databases. That's why I created GenVedix - a platform born out of my own struggles
-                    and passion for bioinformatics.<br><br>
-                    I wanted to build a tool that would save others the time and effort I've wasted, and instead empower them to focus
-                    on what really matters: discovering new insights and advancing our understanding of the genetic code. With GenVedix,
-                    I've aimed to create a seamless, intuitive experience that brings together the best of gene annotation and analysis
-                    in one place. My hope is that it becomes an indispensable companion for researchers, students, and scientists,
-                    helping them unlock the secrets of the genome and drive innovation.
+                    Hello Bioinformaticians! I’m Tejal Kale, a Master’s student in Bioinformatics at Deccan Education Society’s Pune University.
+
+GenVedix is more than just a mini-project, it’s a solution born from lived experience. During my journey through gene exploration, I often found myself overwhelmed by fragmented tools, scattered databases, and time-consuming processes. Like many of you, I longed for a unified, accessible platform one that could simplify my workflow and help me focus on understanding genes, not chasing them across multiple sources.
+
+That’s where GenVedix was born. It is built for you, the curious student trying to decode your first gene, the researcher seeking quick and reliable insights, the educator wanting to demonstrate genome structure clearly, and anyone passionate about unraveling biological complexity. GenVedix combines essential gene analysis functions into one cohesive interface clean, intuitive, and beginner friendly, with no installation needed.
+
+I developed GenVedix not just as a tool, but as a companion in your genomic journey. Whether you're analyzing gene features, comparing sequences, or simply learning the ropes, GenVedix is designed to feel like an extension of your curiosity reliable, insightful, and always ready to assist.
                     </p>
                 </div>
             </div>
@@ -1254,9 +1232,8 @@ def render_about_section():
         st.markdown("<h2 style='color: #4CAF50!important; border-bottom: 2px solid #4CAF50; padding-bottom: 0.5rem;'>Purpose & Overview</h2>", unsafe_allow_html=True)
         st.markdown("""
         <div class='title-box' style='background-color: #2a2a2a; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 5px solid #4CAF50;'>
-            <h3 style='color: #4CAF50!important; margin-bottom: 0.5rem;'>GenVedix: Your Comprehensive Gene Annotation Platform</h3>
-            <p style='color: #e0e0e0;'>GenVedix provides researchers and students with fast, reliable access to gene annotations,
-            sequence analysis tools, and visualization capabilities, all integrated with trusted biological databases.</p>
+            <h3 style='color: #4CAF50!important; margin-bottom: 0.5rem;'>GenVedix: Your Comprehensive Gene Exploration Platform</h3>
+            <p style='color: #e0e0e0;'>GenVedix is designed to empower students, educators, and early-stage researchers by offering a streamlined, user-friendly platform that brings together essential genomic tools in one place. From real-time gene annotation and sequence analysis to GC content calculation, codon usage insights, ORF detection, and pairwise alignment, GenVedix simplifies complex bioinformatics tasks. Integrated with trusted databases like NCBI and built on a clean, accessible interface, it enables users to explore, interpret, and visualize gene-related data without technical barriers—making learning and research more intuitive, efficient, and engaging.</p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("""
@@ -2124,4 +2101,14 @@ st.sidebar.markdown("---")
 page_selection = st.sidebar.radio("Go to", list(PAGES.keys()))
 st.sidebar.markdown("<hr style='border-top: 1.5px solid #0a3a4a; margin: 1em 0;'>", unsafe_allow_html=True)
 
-PAGES[page_selection]()
+
+PAGES[page_selection]() 
+
+# Sidebar footer
+st.sidebar.markdown("---")
+with st.sidebar.expander("GenVedix"):
+    st.markdown(""" 
+    **Last Updated-May 2025**  
+    **Developed By Tejal Kale with ❤ for the Bioinformatics Community**  
+    """)
+
