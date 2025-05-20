@@ -1270,7 +1270,7 @@ I developed GenVedix not just as a tool, but as a companion in your genomic jour
                 Connect on LinkedIn
             </button>
         </a>
-        <a href='https://github.com/' target='_blank' style='text-decoration: none;'>
+        <a href='https://github.com/TejalKale05' target='_blank' style='text-decoration: none;'>
             <button class='custom-link-button'>
                 View GitHub Profile
             </button>
